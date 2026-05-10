@@ -103,13 +103,15 @@ class App(ctk.CTk):
         self.chk_mirror_var = ctk.BooleanVar(value=False)
         self.chk_mirror_v_var = ctk.BooleanVar(value=False)
         self.chk_tts_var = ctk.BooleanVar(value=True)
-        self.chk_mute_var = ctk.BooleanVar(value=True)
+        self.chk_mute_var = ctk.BooleanVar(value=False)
         self.voice_var = ctk.StringVar(value="Nam (Nam Minh)")
         self.speed_var = ctk.StringVar(value="Bình thường")
         self.bg_vol_var = ctk.DoubleVar(value=0.6)
+        self.duck_depth_var = ctk.DoubleVar(value=0.5)
         
         self.trans_context_var = ctk.StringVar()
         self.ex_chk_auto_translate_var = ctk.BooleanVar(value=True)
+        self.auto_chk_vocal_remove_var = ctk.BooleanVar(value=True)
         self.proj_dir_var = ctk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos", "LuanPro_Projects"))
 
 
@@ -213,8 +215,10 @@ class App(ctk.CTk):
         ctk.CTkComboBox(q_frame, values=["-20%", "-10%", "Bình thường", "+10%", "+20%", "+30%"], variable=self.speed_var, width=90, height=24).grid(row=0, column=3, padx=2, pady=2)
 
         ctk.CTkLabel(q_frame, text="🔊 Vol Nền:", font=ctk.CTkFont(size=12)).grid(row=0, column=4, padx=5, pady=2)
-        self.bg_vol_var = ctk.DoubleVar(value=0.6)
         ctk.CTkSlider(q_frame, from_=0, to=1.5, variable=self.bg_vol_var, width=80, height=16).grid(row=0, column=5, padx=2, pady=2)
+
+        ctk.CTkLabel(q_frame, text="📉 Ducking:", font=ctk.CTkFont(size=12)).grid(row=0, column=6, padx=5, pady=2)
+        ctk.CTkSlider(q_frame, from_=0, to=1.0, variable=self.duck_depth_var, width=80, height=16).grid(row=0, column=7, padx=2, pady=2)
 
         # Tùy chọn bổ sung (Sắp xếp gọn gàng thành 2 dòng)
         opt_container = ctk.CTkFrame(auto_frame, fg_color="transparent")
@@ -241,8 +245,9 @@ class App(ctk.CTk):
         row2 = ctk.CTkFrame(opt_container, fg_color="transparent")
         row2.pack(fill="x", pady=5)
         
-        self.auto_chk_vocal_remove_var = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(row2, text="🔇 Lọc giọng gốc", variable=self.auto_chk_vocal_remove_var, text_color="#FF99CC", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 15))
+        
+        ctk.CTkCheckBox(row2, text="🔇 Tắt tiếng gốc", variable=self.chk_mute_var, text_color="#e74c3c", font=ctk.CTkFont(size=12)).pack(side="left", padx=10)
         
         self.auto_chk_thumbnail_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(row2, text="🖼️ Tự tạo Ảnh bìa", variable=self.auto_chk_thumbnail_var, text_color="#FFD700", font=ctk.CTkFont(size=12)).pack(side="left", padx=15)
@@ -775,7 +780,7 @@ class App(ctk.CTk):
         if c == "Đỏ": return "&H000000FF"
         return "&H00FFFFFF"
 
-    def create_ass_karaoke(self, srt_content, ass_path, font_size=20, font_color="&H00FFFFFF", bg_opacity=160, margin_v=25):
+    def create_ass_karaoke(self, srt_content, ass_path, font_size=20, font_color="&H00FFFFFF", bg_opacity=160, margin_v=25, res_x=1280, res_y=720):
         # ASS transparency: 0 is opaque, 255 is transparent. 
         # But của slider là 0 (transparent) to 255 (opaque). So we flip it.
         ass_alpha = 255 - bg_opacity
@@ -794,8 +799,8 @@ class App(ctk.CTk):
         
         header = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: 384
-PlayResY: 288
+PlayResX: {res_x}
+PlayResY: {res_y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -832,7 +837,81 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"[-] Lỗi tạo ASS Karaoke: {e}")
             return False
 
+    def remove_vocal_advanced(self, video_path, output_dir):
+        """Công nghệ tách giọng mới: Advanced Spectral Subtraction.
+        Sử dụng xử lý tín hiệu số (DSP) để loại bỏ giọng nói mà không cần AI/PyTorch.
+        """
+        try:
+            import librosa
+            import soundfile as sf
+            import numpy as np
+
+            # 1. Trích xuất audio từ video
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            temp_input_wav = os.path.join(output_dir, "_temp_vocal_remove_in.wav")
+            subprocess.run([
+                ffmpeg_exe, "-y", "-nostdin", "-i", video_path,
+                "-vn", "-ac", "2", "-ar", "44100", temp_input_wav
+            ], capture_output=True, creationflags=CREATE_NO_WINDOW)
+
+            if not os.path.exists(temp_input_wav): return ""
+
+            # 2. Xử lý âm thanh (Công nghệ Vocal Reduction)
+            print("[*] Đang lọc giọng (Đảm bảo giữ tiếng môi trường)...")
+            y, sr = librosa.load(temp_input_wav, sr=None, mono=False)
+            
+            if y.ndim < 2 or y.shape[0] < 2:
+                # Nếu là Mono: Giảm nhẹ dải tần giọng người (300-3000Hz)
+                S = librosa.stft(librosa.to_mono(y))
+                freqs = librosa.fft_frequencies(sr=sr)
+                vocal_mask = (freqs > 300) & (freqs < 3000)
+                S[vocal_mask, :] *= 0.5 # Giảm 50% giọng người
+                y_final = librosa.istft(S)
+            else:
+                # Nếu là Stereo: Giảm Center Channel một cách cực kỳ nhẹ nhàng
+                S_left = librosa.stft(y[0])
+                S_right = librosa.stft(y[1])
+                
+                # Tính độ tương đồng
+                mag_L, mag_R = np.abs(S_left), np.abs(S_right)
+                similarity = np.minimum(mag_L, mag_R) / (np.maximum(mag_L, mag_R) + 1e-6)
+                
+                # GIỮ LẠI 80% ÂM THANH GỐC (Chỉ giảm 20% ở những nơi có giọng nói)
+                # Điều này giúp tiếng môi trường gần như nguyên vẹn 100%
+                mask = 1.0 - (similarity * 0.2) 
+                
+                # Áp dụng và chuyển về dạng sóng
+                y_out_L = librosa.istft(S_left * mask)
+                y_out_R = librosa.istft(S_right * mask)
+                
+                min_len = min(len(y_out_L), len(y_out_R))
+                y_final = np.vstack([y_out_L[:min_len], y_out_R[:min_len]])
+
+
+            # 3. Lưu kết quả
+            output_wav = os.path.join(output_dir, "no_vocals_advanced.wav")
+            # Soundfile cần (samples, channels)
+            save_data = y_final.T if y_final.ndim > 1 else y_final
+            sf.write(output_wav, save_data, sr)
+
+
+
+            
+            # Dọn dẹp file tạm
+            if os.path.exists(temp_input_wav): os.remove(temp_input_wav)
+            
+            return output_wav
+
+        except Exception as e:
+            print(f"[-] Lỗi công nghệ tách giọng mới: {e}")
+            return ""
+
+
+
+
+
     def run_video_burn(self, output_path, preview_mode=False, progress_offset=0.0, progress_scale=1.0, target_format=None, skip_tts=False):
+
         temp_srt = "_temp_subtitles.srt"
         temp_ass = "_temp_subtitles.ass"
         tts_audio = "_temp_tts_audio.wav"
@@ -868,12 +947,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
             if not os.path.exists(temp_srt) and self.vi_srt_file and os.path.exists(self.vi_srt_file):
                 shutil.copy2(self.vi_srt_file, temp_srt)
-                
+
+            # --- BƯỚC TÁCH GIỌNG CÔNG NGHỆ MỚI (ADVANCED DSP) ---
+            no_vocals_file = ""
+            if self.auto_chk_vocal_remove_var.get():
+                print("[*] Đang thực hiện tách giọng bằng công nghệ Advanced Spectral Subtraction...")
+                work_dir = self.proj_dir_var.get()
+                os.makedirs(work_dir, exist_ok=True)
+                no_vocals_file = self.remove_vocal_advanced(self.video_file, work_dir)
+                if no_vocals_file:
+                    print(f"[+] Tách giọng thành công: {os.path.basename(no_vocals_file)}")
+                else:
+                    print("[-] Công nghệ tách giọng mới thất bại, dùng Phase Cancellation dự phòng.")
+
+
+
             print("[*] Đang nối Filter Graph và xuất Video...")
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
             
             cmd = [ffmpeg_exe, "-nostdin", "-y", "-i", self.video_file]
             input_idx = 1
+
+            # Thêm no_vocals.wav như input riêng nếu Demucs thành công
+            no_vocals_idx = -1
+            if no_vocals_file and os.path.exists(no_vocals_file):
+                cmd.extend(["-i", no_vocals_file])
+                no_vocals_idx = input_idx
+                input_idx += 1
             
             logo_idx = -1
             if self.logo_file and os.path.exists(self.logo_file):
@@ -1014,35 +1114,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             font_size = current_font_size
             c_name = current_font_color
             
-            # Tính toán MarginV chung cho cả SRT và ASS
-            margin_v = 15
-            if current_sub_pos:
-                sub_y_orig = current_sub_pos[1]
-                abs_sub_y = sub_y_orig + py
-                new_sub_y = abs_sub_y - ry
-                center_from_bottom_px = crop_h - new_sub_y
-                center_from_bottom_ass = (center_from_bottom_px / crop_h) * 288.0
-                margin_v = int(center_from_bottom_ass - (int(font_size) / 2.0))
-            elif current_blur_boxes and crop_h > 0:
-                lowest_box = max(current_blur_boxes, key=lambda b: b[1])
-                bx, by, bw, bh = lowest_box
-                abs_by = by + py
-                new_by = abs_by - ry
-                center_from_bottom_px = crop_h - (new_by + bh / 2.0)
-                center_from_bottom_ass = (center_from_bottom_px / crop_h) * 288.0
-                margin_v = int(center_from_bottom_ass - (int(font_size) / 2.0))
-            if margin_v < 0: margin_v = 0
+            # Tính toán MarginV (Sử dụng đơn vị pixel trực tiếp vì PlayResY sẽ khớp với crop_h)
+            # Ưu tiên tuyệt đối vị trí người dùng đã đặt (kéo thả)
+            if current_sub_pos and ph > 0:
+                sub_y_on_preview = current_sub_pos[1]
+                margin_v = int(ph - sub_y_on_preview)
+            else:
+                # Nếu không kéo, mặc định nằm ở dưới (cách đáy 15/288 chiều cao)
+                margin_v = int(ph * 15 / 288.0)
+            
+            if margin_v < 10: margin_v = 10
+            if margin_v > ph - 50: margin_v = ph - 50
+
+            # Điều chỉnh font size theo độ phân giải thực tế
+            # Scale font từ chuẩn 288 lên độ cao thực tế của video
+            ass_font_size = int(int(font_size) * ph / 288.0)
+            if ass_font_size < 20: ass_font_size = 20
+
 
             if use_ass:
                 with open(temp_srt, 'r', encoding='utf-8') as f:
                     srt_txt = f.read()
                 
                 ass_color = self.get_color_code_ass(c_name)
-                # ASS font size needs to be adjusted as PlayRes is small
-                ass_font_size = int(int(font_size) * 0.8)
                 opacity = self.auto_sub_opacity_var.get()
-                if self.create_ass_karaoke(srt_txt, temp_ass, font_size=ass_font_size, font_color=ass_color, bg_opacity=opacity, margin_v=margin_v):
-                    # Windows FFmpeg subtitle path escaping
+                if self.create_ass_karaoke(srt_txt, temp_ass, font_size=ass_font_size, font_color=ass_color, bg_opacity=opacity, margin_v=margin_v, res_x=crop_w, res_y=crop_h):
                     esc_ass = temp_ass.replace('\\', '/').replace(':', '\\:')
                     filter_complex += f"[{v_out}]subtitles='{esc_ass}'[v_sub];"
                     v_out = "v_sub"
@@ -1052,40 +1148,55 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 elif c_name == "Đỏ": font_color = "&H000000FF"
                 else: font_color = "&H00FFFFFF"
                 
-                style = f"FontSize={font_size},PrimaryColour={font_color},OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v},Bold=1"
+                # ÉP CHẾT Alignment=2 (Dưới - Giữa)
+                style = f"FontSize={font_size},PrimaryColour={font_color},OutlineColour=&H00000000,BorderStyle=1,Outline=2,MarginV={margin_v},Alignment=2,Bold=1"
                 esc_srt = temp_srt.replace('\\', '/').replace(':', '\\:')
                 filter_complex += f"[{v_out}]subtitles='{esc_srt}':force_style='{style}'[v_sub];"
                 v_out = "v_sub"
 
-            # --- 6. XỬ LÝ ÂM THANH (Fix triệt để lỗi unconnected output) ---
+
+            # --- 6. XỬ LÝ ÂM THANH (Nâng cấp: Lọc giọng gốc + Ducking) ---
             bg_vol = self.bg_vol_var.get()
             a_out = ""
             
-            if tts_idx == -1:
-                # Không có giọng đọc AI
-                if self.chk_mute_var.get():
-                    filter_complex += "anullsrc=r=44100:cl=stereo[a_out];"
-                    a_out = "a_out"
+            is_mute = self.chk_mute_var.get()
+            has_tts = (tts_idx != -1)
+
+            if is_mute:
+                # TRƯỜNG HỢP 1: TẮT TIẾNG GỐC
+                if has_tts:
+                    # Chỉ lấy giọng AI
+                    filter_complex += f"[{tts_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[a_out_final];"
+                    a_out = "a_out_final"
                 else:
-                    filter_complex += f"[0:a]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[a_out];"
-                    a_out = "a_out"
+                    # Im lặng hoàn toàn
+                    filter_complex += "anullsrc=r=44100:cl=stereo[a_mute];"
+                    a_out = "a_mute"
             else:
-                # Có giọng đọc AI
-                if self.chk_mute_var.get():
-                    # Chỉ lấy giọng AI, tắt tiếng gốc
-                    filter_complex += f"[{tts_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[a_out];"
-                    a_out = "a_out"
+                # TRƯỜNG HỢP 2: GIỮ TIẾNG GỐC (CÓ THỂ LỌC GIỌNG HOẶC DUCKING)
+                # Chuẩn bị nhạc nền
+                if no_vocals_idx != -1:
+                    filter_complex += f"[{no_vocals_idx}:a]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
+                elif self.auto_chk_vocal_remove_var.get():
+                    filter_complex += f"[0:a]pan=stereo|c0=c0-c1|c1=c1-c0,volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
                 else:
-                    # Trộn tiếng gốc và tiếng AI
-                    filter_complex += f"[0:a]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg];"
-                    filter_complex += f"[{tts_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo[tts_std];"
-                    
-                    if self.auto_chk_vocal_remove_var.get():
-                        filter_complex += f"[v_bg][tts_std]sidechaincompress=threshold=0.15:ratio=15:attack=15:release=300[a_ducked];"
-                        filter_complex += f"[a_ducked][tts_std]amix=inputs=2:duration=first[a_out];"
-                    else:
-                        filter_complex += f"[v_bg][tts_std]amix=inputs=2:duration=first[a_out];"
-                    a_out = "a_out"
+                    filter_complex += f"[0:a]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
+
+                if not has_tts:
+                    # Giữ nguyên nhạc nền đã xử lý
+                    a_out = "v_bg_ready"
+                else:
+                    # Trộn nhạc nền + Giọng AI (Ducking)
+                    depth = self.duck_depth_var.get()
+                    duck_ratio = 1 + (depth * 19)
+                    duck_threshold = 0.15 - (depth * 0.14) 
+                    filter_complex += f"[{tts_idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,asplit[tts_side][tts_mix];"
+                    # Chaining two compressors for super deep ducking (up to 400:1 ratio)
+                    filter_complex += f"[v_bg_ready][tts_side]sidechaincompress=threshold={duck_threshold:.3f}:ratio={duck_ratio}:attack=10:release=400[a_duck_1];"
+                    filter_complex += f"[a_duck_1][tts_side]sidechaincompress=threshold={duck_threshold:.3f}:ratio={duck_ratio}:attack=10:release=400[a_ducked];"
+                    filter_complex += f"[a_ducked][tts_mix]amix=inputs=2:duration=first[a_out_final];"
+                    a_out = "a_out_final"
+
             
             # --- KẾT THÚC FILTER COMPLEX ---
             filter_complex = filter_complex.rstrip(';')
