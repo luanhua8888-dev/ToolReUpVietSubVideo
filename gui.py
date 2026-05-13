@@ -11,6 +11,7 @@ import shutil
 from PIL import Image, ImageTk
 import re
 import translate
+import webbrowser
 from dotenv import load_dotenv
 
 # Load môi trường ngay từ đầu
@@ -85,15 +86,13 @@ class App(ctk.CTk):
 
         # ====== KHỞI TẠO BIẾN DÙNG CHUNG ======
         self.model_mapping = {
-            "Gemini 3 Flash Preview": "gemini-3-flash-preview",
-            "Gemini 2.5 Flash": "gemini-2.5-flash",
-            "Gemini 2.0 Flash": "gemini-2.0-flash",
-            "Gemini 1.5 Pro Latest": "gemini-pro-latest",
-            "Gemini 1.5 Flash Latest": "gemini-flash-latest",
-            "OpenAI GPT-4o": "gpt-4o",
+            "🏆 Claude 3.5 Sonnet (Dịch Hay Nhất)": "claude-3-5-sonnet-20241022",
+            "💎 Gemini 1.5 Pro (Thông Minh Nhất)": "gemini-1.5-pro-latest",
+            "🔥 GPT-4o (Chuẩn Xác)": "gpt-4o",
+            "🚀 Groq Llama 3.3 70B (Siêu Tốc)": "llama-3.3-70b-versatile",
+            "⚡ Gemini 2.0 Flash (Nhanh & Tốt)": "gemini-2.0-flash-exp",
             "OpenAI GPT-4o Mini": "gpt-4o-mini",
-            "Claude 3.5 Sonnet": "claude-3-5-sonnet-20240620",
-            "Claude 3 Opus": "claude-3-opus-20240229"
+            "Groq Mixtral 8x7B": "mixtral-8x7b-32768"
         }
         
         self.crop_format_var = ctk.StringVar(value="Giữ nguyên gốc")
@@ -153,12 +152,20 @@ class App(ctk.CTk):
         self.chk_auto_trans = ctk.CTkCheckBox(b2, text="Dịch bằng:", variable=self.auto_chk_extract_var, text_color="#00e676", width=80)
         self.chk_auto_trans.pack(side="left", padx=10)
         
-        self.auto_trans_model_var = ctk.StringVar(value="Gemini 3 Flash Preview")
+        self.auto_trans_model_var = ctk.StringVar(value="⚡ Gemini 2.0 Flash (Nhanh & Tốt)")
         self.cb_auto_trans_model = ctk.CTkComboBox(b2, values=list(self.model_mapping.keys()), variable=self.auto_trans_model_var, width=200)
         self.cb_auto_trans_model.pack(side="left", padx=0)
         
-        self.auto_context_var = ctk.StringVar()
-        self.entry_auto_context = ctk.CTkEntry(b2, textvariable=self.auto_context_var, placeholder_text="Ngữ cảnh dịch (Xưng hô...)", width=180)
+        self.auto_context_var = ctk.StringVar(value="Vlog/Đời thường (Tự nhiên)")
+        self.entry_auto_context = ctk.CTkComboBox(b2, values=[
+            "Vlog/Đời thường (Tự nhiên)",
+            "Vlog Câu cá (Dân dã, xưng hô mình/các bạn)",
+            "Review Ẩm thực (Hấp dẫn, mô tả vị giác)",
+            "Review Phim (Kịch tính, lôi cuốn)",
+            "Video Hài (Hài hước, xưng hô mày/tao)",
+            "Tin tức / Tài liệu (Trang trọng)",
+            "Game / Livestream (Sôi nổi, dùng thuật ngữ game)"
+        ], variable=self.auto_context_var, width=220)
         self.entry_auto_context.pack(side="left", padx=10)
         
         # B3: Định dạng
@@ -190,6 +197,14 @@ class App(ctk.CTk):
         
         lbl_hint = ctk.CTkLabel(auto_frame, text="*Vẽ vùng che phụ đề cũ & Kéo Logo trực tiếp bên màn hình Preview", text_color="#FF9900", font=ctk.CTkFont(size=11, slant="italic"))
         lbl_hint.pack(pady=0)
+
+        # B5: Nhạc nền (Tùy chọn)
+        b5 = ctk.CTkFrame(auto_frame, fg_color="transparent")
+        b5.pack(fill="x", pady=2)
+        self.auto_btn_bg_music = ctk.CTkButton(b5, text="🎵 B5: Nhạc nền (Tùy chọn)", command=self.select_bg_music, font=ctk.CTkFont(weight="bold"), width=160, fg_color="#34495e")
+        self.auto_btn_bg_music.pack(side="left", padx=10)
+        self.auto_lbl_bg_music = ctk.CTkLabel(b5, text="Chưa chọn", text_color="#A0A0A0")
+        self.auto_lbl_bg_music.pack(side="left", padx=5)
 
         # Cấu hình Giao diện (Style)
         s_frame = ctk.CTkFrame(auto_frame, fg_color="#1a252c", corner_radius=8)
@@ -257,6 +272,16 @@ class App(ctk.CTk):
         
         self.auto_chk_preview_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(row2, text="⚡ Bản nháp 60s", variable=self.auto_chk_preview_var, text_color="#f39c12", font=ctk.CTkFont(size=12, weight="bold")).pack(side="right", padx=5)
+
+        # Dòng 3: Công cụ YouTube
+        row3 = ctk.CTkFrame(opt_container, fg_color="transparent")
+        row3.pack(fill="x", pady=5)
+        
+        self.btn_audio_library = ctk.CTkButton(row3, text="🎵 Thư viện nhạc YouTube", command=self.open_audio_library, fg_color="#d35400", hover_color="#e67e22", font=ctk.CTkFont(size=12, weight="bold"), width=200)
+        self.btn_audio_library.pack(side="left", padx=(0, 10))
+        
+        self.btn_check_copyright = ctk.CTkButton(row3, text="🔍 Check Bản Quyền", command=self.open_copyright_check, fg_color="#2980b9", hover_color="#3498db", font=ctk.CTkFont(size=12, weight="bold"), width=200)
+        self.btn_check_copyright.pack(side="left", padx=10)
         
         # Nút START AUTO và STOP
         btn_frame = ctk.CTkFrame(auto_frame, fg_color="transparent")
@@ -298,6 +323,12 @@ class App(ctk.CTk):
         self.claude_key_var = ctk.StringVar(value=os.getenv("CLAUDE_API_KEY", ""))
         self.claude_key_entry = ctk.CTkEntry(settings_frame, textvariable=self.claude_key_var, width=450, placeholder_text="sk-ant-...")
         self.claude_key_entry.pack(pady=5)
+
+        # Groq
+        ctk.CTkLabel(settings_frame, text="Groq API Key:").pack(pady=(10, 0))
+        self.groq_key_var = ctk.StringVar(value=os.getenv("GROQ_API_KEY", ""))
+        self.groq_key_entry = ctk.CTkEntry(settings_frame, textvariable=self.groq_key_var, width=450, placeholder_text="gsk_...")
+        self.groq_key_entry.pack(pady=5)
 
         self.btn_save_settings = ctk.CTkButton(settings_frame, text="💾 LƯU CÀI ĐẶT", command=self.save_settings, fg_color="#2ecc71", hover_color="#27ae60", font=ctk.CTkFont(weight="bold"))
         self.btn_save_settings.pack(pady=30)
@@ -356,6 +387,7 @@ class App(ctk.CTk):
         self.rects = []
         self.current_rect = None
         self.logo_pos = None # (x, y) based on orig_w, orig_h
+        self.bg_music_file = "" # B5: Background music file
         self.logo_item = None
         self.dragging_logo = False
         self.scale = 1.0
@@ -462,6 +494,28 @@ class App(ctk.CTk):
                 self.auto_lbl_logo.configure(text=os.path.basename(file_path), text_color="#00e676")
             self.logo_pos = None # Reset pos when new logo selected
             self.update_preview()
+
+    def select_bg_music(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Audio files", "*.mp3 *.wav *.m4a")])
+        if file_path:
+            self.bg_music_file = file_path
+            if hasattr(self, 'auto_btn_bg_music'):
+                self.auto_btn_bg_music.configure(fg_color="#555555")
+            if hasattr(self, 'auto_lbl_bg_music'):
+                self.auto_lbl_bg_music.configure(text=os.path.basename(file_path), text_color="#00e676")
+
+    def open_audio_library(self):
+        webbrowser.open("https://www.youtube.com/audiolibrary")
+
+    def open_copyright_check(self):
+        msg = "Cách check bản quyền chính xác 100%:\n\n" \
+              "1. Truy cập YouTube Studio.\n" \
+              "2. Tải video lên ở chế độ 'Riêng tư' (Private) hoặc 'Không công khai' (Unlisted).\n" \
+              "3. Đợi YouTube chạy bước 'Kiểm tra' (Checks).\n" \
+              "4. Nếu hiện 'Không có vấn đề gì', video của bạn an toàn.\n\n" \
+              "Bấm 'OK' để mở YouTube Studio ngay!"
+        if messagebox.showinfo("Hướng dẫn Check Bản Quyền", msg):
+            webbrowser.open("https://studio.youtube.com/")
 
     def on_auto_src_change(self, value):
         if value == "File SRT có sẵn":
@@ -855,44 +909,57 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ], capture_output=True, creationflags=CREATE_NO_WINDOW)
 
             if not os.path.exists(temp_input_wav): return ""
-
-            # 2. Xử lý âm thanh (Công nghệ Vocal Reduction)
-            print("[*] Đang lọc giọng (Đảm bảo giữ tiếng môi trường)...")
-            y, sr = librosa.load(temp_input_wav, sr=None, mono=False)
-            
-            if y.ndim < 2 or y.shape[0] < 2:
-                # Nếu là Mono: Giảm nhẹ dải tần giọng người (300-3000Hz)
-                S = librosa.stft(librosa.to_mono(y))
-                freqs = librosa.fft_frequencies(sr=sr)
-                vocal_mask = (freqs > 300) & (freqs < 3000)
-                S[vocal_mask, :] *= 0.5 # Giảm 50% giọng người
-                y_final = librosa.istft(S)
-            else:
-                # Nếu là Stereo: Giảm Center Channel một cách cực kỳ nhẹ nhàng
-                S_left = librosa.stft(y[0])
-                S_right = librosa.stft(y[1])
-                
-                # Tính độ tương đồng
-                mag_L, mag_R = np.abs(S_left), np.abs(S_right)
-                similarity = np.minimum(mag_L, mag_R) / (np.maximum(mag_L, mag_R) + 1e-6)
-                
-                # GIỮ LẠI 80% ÂM THANH GỐC (Chỉ giảm 20% ở những nơi có giọng nói)
-                # Điều này giúp tiếng môi trường gần như nguyên vẹn 100%
-                mask = 1.0 - (similarity * 0.2) 
-                
-                # Áp dụng và chuyển về dạng sóng
-                y_out_L = librosa.istft(S_left * mask)
-                y_out_R = librosa.istft(S_right * mask)
-                
-                min_len = min(len(y_out_L), len(y_out_R))
-                y_final = np.vstack([y_out_L[:min_len], y_out_R[:min_len]])
-
-
-            # 3. Lưu kết quả
             output_wav = os.path.join(output_dir, "no_vocals_advanced.wav")
-            # Soundfile cần (samples, channels)
-            save_data = y_final.T if y_final.ndim > 1 else y_final
-            sf.write(output_wav, save_data, sr)
+            print("[*] Đang lọc giọng bằng công nghệ Chunked DSP (Tiết kiệm RAM)...")
+            
+            info = sf.info(temp_input_wav)
+            sr = info.samplerate
+            total_frames = info.frames
+            channels = info.channels
+            
+            chunk_size = 60 * sr 
+            
+            with sf.SoundFile(temp_input_wav) as in_f:
+                with sf.SoundFile(output_wav, mode='w', samplerate=sr, channels=channels) as out_f:
+                    while in_f.tell() < total_frames:
+                        data = in_f.read(chunk_size)
+                        if len(data) == 0: break
+                        y = data.T
+                        if channels < 2:
+                            # Mono: Giảm nhẹ dải tần giọng người
+                            S = librosa.stft(librosa.to_mono(y))
+                            freqs = librosa.fft_frequencies(sr=sr)
+                            vocal_mask = (freqs > 300) & (freqs < 3000)
+                            S[vocal_mask, :] *= 0.6 # Giảm 40%
+                            y_processed = librosa.istft(S)
+                            if len(y_processed) > len(data): y_processed = y_processed[:len(data)]
+                            out_f.write(y_processed)
+                        else:
+                            # Stereo: Spectral Center Cancellation
+                            S_left = librosa.stft(y[0])
+                            S_right = librosa.stft(y[1])
+                            
+                            mag_L, mag_R = np.abs(S_left), np.abs(S_right)
+                            denom = np.maximum(mag_L, mag_R) + 1e-6
+                            similarity = np.minimum(mag_L, mag_R) / denom
+                            
+                            mask = 1.0 - (similarity * 0.2)
+                            
+                            y_out_L = librosa.istft(S_left * mask)
+                            y_out_R = librosa.istft(S_right * mask)
+                            
+                            min_len = min(len(y_out_L), len(y_out_R), len(data))
+                            y_final = np.vstack([y_out_L[:min_len], y_out_R[:min_len]]).T
+                            out_f.write(y_final)
+                            
+                        # Log tiến độ nhẹ nhàng
+                        pct = int(in_f.tell() / total_frames * 100)
+                        if pct % 20 == 0:
+                            print(f"    > Đã xử lý âm thanh: {pct}%")
+
+
+            if os.path.exists(temp_input_wav): os.remove(temp_input_wav)
+            return output_wav
 
 
 
@@ -903,8 +970,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return output_wav
 
         except Exception as e:
-            print(f"[-] Lỗi công nghệ tách giọng mới: {e}")
-            return ""
+            print(f"[-] Lỗi lọc giọng nâng cao: {e}")
+            return self.fallback_vocal_remove(video_path, output_dir)
+
+    def fallback_vocal_remove(self, video_path, output_dir):
+        """Phương pháp dự phòng siêu nhẹ bằng FFmpeg pan filter"""
+        print("[!] Đang dùng phương pháp dự phòng FFmpeg (Phase Cancellation)...")
+        output_wav = os.path.join(output_dir, "no_vocals_fallback.wav")
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run([
+            ffmpeg_exe, "-y", "-i", video_path,
+            "-af", "pan=stereo|c0=c0-c1|c1=c1-c0",
+            "-vn", output_wav
+        ], capture_output=True, creationflags=CREATE_NO_WINDOW)
+        return output_wav if os.path.exists(output_wav) else ""
 
 
 
@@ -985,6 +1064,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if self.chk_tts_var.get() and os.path.exists(tts_audio):
                 cmd.extend(["-i", tts_audio])
                 tts_idx = input_idx
+                input_idx += 1
+            
+            bg_music_idx = -1
+            if hasattr(self, 'bg_music_file') and self.bg_music_file and os.path.exists(self.bg_music_file):
+                cmd.extend(["-stream_loop", "-1", "-i", self.bg_music_file])
+                bg_music_idx = input_idx
                 input_idx += 1
 
             filter_complex = ""
@@ -1175,7 +1260,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             else:
                 # TRƯỜNG HỢP 2: GIỮ TIẾNG GỐC (CÓ THỂ LỌC GIỌNG HOẶC DUCKING)
                 # Chuẩn bị nhạc nền
-                if no_vocals_idx != -1:
+                if bg_music_idx != -1:
+                    # Trường hợp có nhạc nền riêng: Trộn với tiếng môi trường (nếu có)
+                    if no_vocals_idx != -1:
+                        filter_complex += f"[{no_vocals_idx}:a][{bg_music_idx}:a]amix=inputs=2:duration=first[v_bg_mixed];"
+                    elif self.auto_chk_vocal_remove_var.get():
+                        filter_complex += f"[0:a]pan=stereo|c0=c0-c1|c1=c1-c0[v_env_tmp];[v_env_tmp][{bg_music_idx}:a]amix=inputs=2:duration=first[v_bg_mixed];"
+                    else:
+                        filter_complex += f"[{bg_music_idx}:a]copy[v_bg_mixed];" # Hoặc trộn với 0:a tùy hỉ, ở đây ưu tiên nhạc mới hoàn toàn
+                    
+                    filter_complex += f"[v_bg_mixed]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
+                elif no_vocals_idx != -1:
                     filter_complex += f"[{no_vocals_idx}:a]volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
                 elif self.auto_chk_vocal_remove_var.get():
                     filter_complex += f"[0:a]pan=stereo|c0=c0-c1|c1=c1-c0,volume={bg_vol},aformat=sample_rates=44100:channel_layouts=stereo[v_bg_ready];"
@@ -1306,10 +1401,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         gemini = self.gemini_key_var.get().strip()
         openai_key = self.openai_key_var.get().strip()
         claude = self.claude_key_var.get().strip()
+        groq = self.groq_key_var.get().strip()
         
         env_content = f"GEMINI_API_KEY={gemini}\n"
         env_content += f"OPENAI_API_KEY={openai_key}\n"
         env_content += f"CLAUDE_API_KEY={claude}\n"
+        env_content += f"GROQ_API_KEY={groq}\n"
         
         try:
             with open(".env", "w", encoding="utf-8") as f:
@@ -1422,16 +1519,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     self.after(0, self.reset_ui)
                     return
                     
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                
-                self.log_textbox.after(0, self.update_progress, "[*] AI đang nghe và chép chính tả (Speech-to-Text). Vui lòng đợi 1-2 phút...")
-                self.progress_bar.configure(mode="indeterminate")
-                self.progress_bar.start()
-                
-                prompt = "Please transcribe this audio and return ONLY a properly formatted SRT file. Do not include any markdown blocks, comments, or extra text."
+                # Tối ưu Token: Sử dụng system_instruction và prompt ngắn gọn
+                model = genai.GenerativeModel(
+                    "gemini-1.5-flash", # Flash là lựa chọn rẻ và nhanh nhất cho STT
+                    system_instruction="Transcribe audio to SRT format. Vietnamese/Chinese focus. Return ONLY SRT text."
+                )
                 
                 try:
-                    response = model.generate_content([prompt, audio_file])
+                    # Gửi file âm thanh đã upload
+                    response = model.generate_content([audio_file])
+
                 except Exception as e:
                     self.log_textbox.after(0, self.update_progress, f"[-] Lỗi gọi API Nhận diện (Đã dừng tiến trình): {e}")
                     try: genai.delete_file(audio_file.name)
