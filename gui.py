@@ -60,6 +60,36 @@ class StdoutRedirector:
         pass
 
 class App(ctk.CTk):
+    def check_cuda(self):
+        try:
+            import torch
+            return torch.cuda.is_available()
+        except:
+            # Dự phòng: Kiểm tra bằng nvidia-smi nếu không có torch
+            try:
+                res = subprocess.run(["nvidia-smi"], capture_output=True, creationflags=CREATE_NO_WINDOW)
+                return res.returncode == 0
+            except:
+                return False
+
+    def get_video_encoder(self, force_cpu=False):
+        """Tự động phát hiện Hardware Encoder tốt nhất (NVENC, QSV, AMF)"""
+        if force_cpu: return "libx264"
+        
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        try:
+            res = subprocess.run([ffmpeg_exe, "-encoders"], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            encoders = res.stdout
+            if "h264_nvenc" in encoders:
+                return "h264_nvenc"
+            if "h264_qsv" in encoders:
+                return "h264_qsv"
+            if "h264_amf" in encoders:
+                return "h264_amf"
+        except:
+            pass
+        return "libx264"
+
     def __init__(self):
         super().__init__()
 
@@ -911,7 +941,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 
-    def run_video_burn(self, output_path, preview_mode=False, progress_offset=0.0, progress_scale=1.0, target_format=None, skip_tts=False):
+    def run_video_burn(self, output_path, preview_mode=False, progress_offset=0.0, progress_scale=1.0, target_format=None, skip_tts=False, force_cpu=False):
 
         temp_srt = "_temp_subtitles.srt"
         temp_ass = "_temp_subtitles.ass"
@@ -1218,14 +1248,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 else:
                     cmd.extend(["-t", "30"])
                 
-            # FIX TRIỆT ĐỂ: Thêm các cờ tương thích cao nhất
+            # Tối ưu hóa Encoder
+            v_encoder = self.get_video_encoder(force_cpu=force_cpu)
+            preset = "ultrafast" if v_encoder == "libx264" else "p4" 
+            
             cmd.extend([
-                "-c:v", "libx264", 
-                "-preset", "ultrafast", 
-                "-crf", "23", 
+                "-c:v", v_encoder, 
+                "-preset", preset, 
+                "-crf" if v_encoder == "libx264" else "-cq", "23", 
                 "-pix_fmt", "yuv420p", 
                 "-r", "30",
-                "-map_metadata", "-1",        # Xóa sạch metadata cũ để tránh xung đột
+                "-threads", "0",              # Tự động dùng hết nhân CPU
+                "-map_metadata", "-1",        
                 "-max_muxing_queue_size", "1024", 
                 "-movflags", "+faststart", 
                 "-c:a", "aac", 
@@ -1273,8 +1307,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     print("\n[+] RENDER THÀNH CÔNG!")
                     self.btn_open_video.pack(side="left", padx=5)
             else:
+                # KIỂM TRA LỖI DRIVER / ENCODER ĐỂ FALLBACK
+                full_log = "\n".join(error_log)
+                if v_encoder != "libx264" and ("Error while opening encoder" in full_log or "nvenc" in full_log.lower()):
+                    print("\n[!] CẢNH BÁO: Driver card màn hình của bạn quá cũ hoặc không hỗ trợ bản NVENC này.")
+                    print("[*] ĐANG TỰ ĐỘNG CHUYỂN SANG DÙNG CPU (libx264) ĐỂ TIẾP TỤC...")
+                    return self.run_video_burn(output_path, preview_mode, progress_offset, progress_scale, target_format, skip_tts, force_cpu=True)
+                
                 print("\n[-] LỖI KHI RENDER!")
-                print("\n".join(error_log))
+                print(full_log)
         except Exception as e:
             print(f"\n[-] LỖI HỆ THỐNG: {e}")
         finally:
@@ -1498,8 +1539,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     
                 try:
                     from faster_whisper import WhisperModel
-                    # Sử dụng CPU với compute_type int8 để tốc độ nhanh nhất
-                    model = WhisperModel("base", device="cpu", compute_type="int8")
+                    # Tự động dùng GPU nếu có, compute_type float16 cho GPU, int8 cho CPU
+                    device = "cuda" if self.check_cuda() else "cpu"
+                    c_type = "float16" if device == "cuda" else "int8"
+                    
+                    self.log_textbox.after(0, self.update_progress, f"[*] Whisper đang chạy trên: {device.upper()} ({c_type})")
+                    model = WhisperModel("base", device=device, compute_type=c_type)
                 except Exception as e:
                     self.log_textbox.after(0, self.update_progress, f"[-] Lỗi tải Faster-Whisper: {e}")
                     self.after(0, self.reset_ui)
