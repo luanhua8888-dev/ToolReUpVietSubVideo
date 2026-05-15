@@ -65,6 +65,7 @@ class App(ctk.CTk):
 
         self.title("Luan Pro Video Editor & Translator")
         self.geometry("1450x850")
+        self.after(0, lambda: self.state('zoomed')) # Mở rộng toàn màn hình khi khởi chạy
         self.configure(fg_color="#121212")
 
         # Layout: 2 cột (Trái: Controls, Phải: Preview)
