@@ -24,3 +24,4 @@ shutil
 yt-dlp
 yt-dlp-embed
 imageio[ffmpeg]
+streamlit
