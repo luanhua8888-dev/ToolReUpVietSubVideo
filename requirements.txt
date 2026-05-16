@@ -5,23 +5,19 @@ openai
 anthropic
 pysrt
 imageio-ffmpeg
-opencv-python
+opencv-python-headless
 pillow
-customtkinter
 psutil
 imageio
 moviepy
 faster-whisper
 edge-tts
-torch
-torchaudio
+torch --index-url https://download.pytorch.org/whl/cpu
+torchaudio --index-url https://download.pytorch.org/whl/cpu
 soundfile
 numpy
 librosa
 tqdm
 pydub
-shutil
 yt-dlp
-yt-dlp-embed
-imageio[ffmpeg]
 streamlit
