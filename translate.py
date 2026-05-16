@@ -15,6 +15,7 @@ def translate_full_srt(content, model_name="gemini-2.0-flash", context=""):
     service = "Gemini"
     if model_name.startswith("gpt"): service = "OpenAI"
     elif model_name.startswith("claude"): service = "Claude"
+    elif "llama" in model_name.lower() or "mixtral" in model_name.lower(): service = "Groq"
     
     api_keys = []
     if service == "Gemini":
@@ -28,6 +29,10 @@ def translate_full_srt(content, model_name="gemini-2.0-flash", context=""):
     elif service == "Claude":
         for k, v in os.environ.items():
             if k.startswith("CLAUDE_API_KEY") and v.strip():
+                api_keys.append(v.strip())
+    elif service == "Groq":
+        for k, v in os.environ.items():
+            if k.startswith("GROQ_API_KEY") and v.strip():
                 api_keys.append(v.strip())
             
     if not api_keys:
@@ -80,6 +85,7 @@ YÊU CẦU BẮT BUỘC:
                     return full_text.strip()
                 
                 elif service == "Claude":
+                    # ... existing Claude logic ...
                     client = anthropic.Anthropic(api_key=api_key)
                     full_text = ""
                     with client.messages.stream(
@@ -90,6 +96,22 @@ YÊU CẦU BẮT BUỘC:
                         for text in stream.text_stream:
                             full_text += text
                             print(text, end="", flush=True)
+                    print("\n")
+                    return full_text.strip()
+                
+                elif service == "Groq":
+                    client = openai.OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        stream=True
+                    )
+                    full_text = ""
+                    for chunk in response:
+                        if chunk.choices[0].delta.content:
+                            t = chunk.choices[0].delta.content
+                            full_text += t
+                            print(t, end="", flush=True)
                     print("\n")
                     return full_text.strip()
                 

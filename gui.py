@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 import re
 import translate
 from dotenv import load_dotenv
+from src.utils import downloader
 
 # Load môi trường ngay từ đầu
 load_dotenv()
@@ -124,7 +125,9 @@ class App(ctk.CTk):
             "OpenAI GPT-4o": "gpt-4o",
             "OpenAI GPT-4o Mini": "gpt-4o-mini",
             "Claude 3.5 Sonnet": "claude-3-5-sonnet-20240620",
-            "Claude 3 Opus": "claude-3-opus-20240229"
+            "Claude 3 Opus": "claude-3-opus-20240229",
+            "Groq Llama 3.3 70B": "llama-3.3-70b-versatile",
+            "Groq Mixtral 8x7B": "mixtral-8x7b-32768"
         }
         
         self.crop_format_var = ctk.StringVar(value="Giữ nguyên gốc")
@@ -144,6 +147,7 @@ class App(ctk.CTk):
         self.ex_chk_auto_translate_var = ctk.BooleanVar(value=True)
         self.auto_chk_vocal_remove_var = ctk.BooleanVar(value=True)
         self.proj_dir_var = ctk.StringVar(value=os.path.join(os.path.expanduser("~"), "Videos", "LuanPro_Projects"))
+        self.video_url_var = ctk.StringVar()
 
 
         # --- TAB AUTO 1-CLICK ---
@@ -152,11 +156,15 @@ class App(ctk.CTk):
         auto_frame = ctk.CTkFrame(auto_tab, fg_color="#252525", corner_radius=8)
         auto_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # B1: Chọn Video
+        # B1: Chọn Video HOẶC Dán Link
         b1 = ctk.CTkFrame(auto_frame, fg_color="transparent")
         b1.pack(fill="x", pady=2)
-        self.auto_btn_video = ctk.CTkButton(b1, text="🎬 B1: Chọn Video", command=self.select_video, font=ctk.CTkFont(weight="bold"), width=160)
+        self.auto_btn_video = ctk.CTkButton(b1, text="🎬 B1: Chọn Video", command=self.select_video, font=ctk.CTkFont(weight="bold"), width=130)
         self.auto_btn_video.pack(side="left", padx=10)
+        
+        self.url_entry = ctk.CTkEntry(b1, textvariable=self.video_url_var, placeholder_text="Dán Link Douyin / Bilibili / Youtube tại đây để tự động tải...", width=380, border_color="#00FFCC")
+        self.url_entry.pack(side="left", padx=5)
+        
         self.auto_lbl_video = ctk.CTkLabel(b1, text="Chưa chọn", text_color="#A0A0A0")
         self.auto_lbl_video.pack(side="left", padx=5)
         
@@ -329,6 +337,12 @@ class App(ctk.CTk):
         self.claude_key_var = ctk.StringVar(value=os.getenv("CLAUDE_API_KEY", ""))
         self.claude_key_entry = ctk.CTkEntry(settings_frame, textvariable=self.claude_key_var, width=450, placeholder_text="sk-ant-...")
         self.claude_key_entry.pack(pady=5)
+
+        # Groq
+        ctk.CTkLabel(settings_frame, text="Groq API Key:").pack(pady=(10, 0))
+        self.groq_key_var = ctk.StringVar(value=os.getenv("GROQ_API_KEY", ""))
+        self.groq_key_entry = ctk.CTkEntry(settings_frame, textvariable=self.groq_key_var, width=450, placeholder_text="gsk-...")
+        self.groq_key_entry.pack(pady=5)
 
         self.btn_save_settings = ctk.CTkButton(settings_frame, text="💾 LƯU CÀI ĐẶT", command=self.save_settings, fg_color="#2ecc71", hover_color="#27ae60", font=ctk.CTkFont(weight="bold"))
         self.btn_save_settings.pack(pady=30)
@@ -1348,10 +1362,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         gemini = self.gemini_key_var.get().strip()
         openai_key = self.openai_key_var.get().strip()
         claude = self.claude_key_var.get().strip()
+        groq = self.groq_key_var.get().strip()
         
         env_content = f"GEMINI_API_KEY={gemini}\n"
         env_content += f"OPENAI_API_KEY={openai_key}\n"
         env_content += f"CLAUDE_API_KEY={claude}\n"
+        env_content += f"GROQ_API_KEY={groq}\n"
         
         try:
             with open(".env", "w", encoding="utf-8") as f:
@@ -1380,8 +1396,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     def start_auto_flow(self):
         if hasattr(self, 'btn_auto_open_folder'):
             self.btn_auto_open_folder.pack_forget()
-        if not self.video_file:
-            messagebox.showwarning("Cảnh báo", "Vui lòng chọn Video ở B2!")
+            
+        url = self.video_url_var.get().strip()
+        if not self.video_file and not url:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn Video ở B1 hoặc dán Link video!")
             return
             
         base_proj_dir = self.proj_dir_var.get()
@@ -1419,6 +1437,42 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             self.set_progress(0)
             base_dir = os.path.dirname(final_save_path)
             
+            # --- BƯỚC 0: TẢI VIDEO NẾU CÓ LINK ---
+            url = self.video_url_var.get().strip()
+            if url:
+                self.log_textbox.after(0, self.update_progress, f"\n[*] BƯỚC 0: ĐANG TẢI VIDEO TỪ LINK: {url}")
+                
+                def download_cb(msg):
+                    self.log_textbox.after(0, self.update_progress, msg)
+                
+                downloaded_file = downloader.download_video(url, base_dir, progress_callback=download_cb)
+                
+                if downloaded_file and os.path.exists(downloaded_file):
+                    self.video_file = downloaded_file
+                    self.log_textbox.after(0, self.update_progress, f"[+] Tải video thành công: {os.path.basename(downloaded_file)}")
+                    
+                    # Cập nhật thông tin video
+                    cap = cv2.VideoCapture(self.video_file)
+                    self.vid_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    self.vid_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    if fps > 0: self.video_duration = frames / fps
+                    cap.release()
+                    
+                    # Cập nhật preview nếu tải thành công
+                    # Chúng ta cần load frame đầu tiên để user có thể vẽ vùng mờ
+                    cap = cv2.VideoCapture(self.video_file)
+                    ret, frame = cap.read()
+                    cap.release()
+                    if ret:
+                        self.raw_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        self.after(0, self.update_preview)
+                else:
+                    self.log_textbox.after(0, self.update_progress, f"[-] Lỗi: Không thể tải video từ link cung cấp.")
+                    self.after(0, self.reset_ui)
+                    return
+
             src_mode = self.auto_src_var.get()
             srt_path = os.path.join(base_dir, "temp_auto_extract.srt")
             
