@@ -196,8 +196,14 @@ class App(ctk.CTk):
         self.cb_auto_trans_model = ctk.CTkComboBox(b2, values=list(self.model_mapping.keys()), variable=self.auto_trans_model_var, width=200)
         self.cb_auto_trans_model.pack(side="left", padx=0)
         
-        self.auto_context_var = ctk.StringVar()
-        self.entry_auto_context = ctk.CTkEntry(b2, textvariable=self.auto_context_var, placeholder_text="Ngữ cảnh dịch (Xưng hô...)", width=180)
+        self.auto_context_var = ctk.StringVar(value="")
+        self.entry_auto_context = ctk.CTkComboBox(
+            b2, 
+            variable=self.auto_context_var, 
+            values=["", "Ẩm thực Trung Quốc", "Vlog Câu Cá", "Vlog Ẩm thực", "Gia đình", "Kể chuyện tâm linh", "Review Phim", "Công nghệ"], 
+            width=180
+        )
+        self.entry_auto_context.set("")
         self.entry_auto_context.pack(side="left", padx=10)
         
         # B3: Định dạng
@@ -996,14 +1002,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # --- BƯỚC TÁCH GIỌNG CÔNG NGHỆ MỚI (ADVANCED DSP) ---
             no_vocals_file = ""
             if self.auto_chk_vocal_remove_var.get():
-                print("[*] Đang thực hiện tách giọng bằng công nghệ Advanced Spectral Subtraction...")
                 work_dir = self.proj_dir_var.get()
-                os.makedirs(work_dir, exist_ok=True)
-                no_vocals_file = self.remove_vocal_advanced(self.video_file, work_dir)
-                if no_vocals_file:
-                    print(f"[+] Tách giọng thành công: {os.path.basename(no_vocals_file)}")
+                expected_no_vocals = os.path.join(work_dir, "no_vocals_advanced.wav")
+                if skip_tts and os.path.exists(expected_no_vocals):
+                    print("[*] Tái sử dụng file tách giọng đã có...")
+                    no_vocals_file = expected_no_vocals
                 else:
-                    print("[-] Công nghệ tách giọng mới thất bại, dùng Phase Cancellation dự phòng.")
+                    print("[*] Đang thực hiện tách giọng bằng công nghệ Advanced Spectral Subtraction...")
+                    os.makedirs(work_dir, exist_ok=True)
+                    no_vocals_file = self.remove_vocal_advanced(self.video_file, work_dir)
+                    if no_vocals_file:
+                        print(f"[+] Tách giọng thành công: {os.path.basename(no_vocals_file)}")
+                    else:
+                        print("[-] Công nghệ tách giọng mới thất bại, dùng Phase Cancellation dự phòng.")
 
 
 
@@ -1326,7 +1337,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if v_encoder != "libx264" and ("Error while opening encoder" in full_log or "nvenc" in full_log.lower()):
                     print("\n[!] CẢNH BÁO: Driver card màn hình của bạn quá cũ hoặc không hỗ trợ bản NVENC này.")
                     print("[*] ĐANG TỰ ĐỘNG CHUYỂN SANG DÙNG CPU (libx264) ĐỂ TIẾP TỤC...")
-                    return self.run_video_burn(output_path, preview_mode, progress_offset, progress_scale, target_format, skip_tts, force_cpu=True)
+                    return self.run_video_burn(output_path, preview_mode, progress_offset, progress_scale, target_format, skip_tts=True, force_cpu=True)
                 
                 print("\n[-] LỖI KHI RENDER!")
                 print(full_log)
